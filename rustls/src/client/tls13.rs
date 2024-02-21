@@ -661,6 +661,29 @@ impl State<ClientConnectionData> for ExpectCertificate {
         let end_entity_ocsp = cert_chain.end_entity_ocsp();
         let server_cert = ServerCertDetails::new(cert_chain.convert(), end_entity_ocsp);
 
+        trace!("Server cert is {:?}", server_cert.cert_chain);
+
+        // 1. Verify the certificate chain.
+        let (end_entity, intermediates) = server_cert
+            .cert_chain
+            .split_first()
+            .ok_or(Error::NoCertificatesPresented)?;
+        let cert_verified = self
+            .config
+            .verifier
+            .verify_server_cert(
+                end_entity,
+                intermediates,
+                &self.server_name,
+                &server_cert.ocsp_response,
+                self.config.current_time()?,
+            )
+            .map_err(|err| {
+                cx.common
+                    .send_cert_verify_error_alert(err)
+            })?;
+
+
         Ok(Box::new(ExpectCertificateVerify {
             config: self.config,
             server_name: self.server_name,
@@ -670,6 +693,7 @@ impl State<ClientConnectionData> for ExpectCertificate {
             key_schedule: self.key_schedule,
             server_cert,
             client_auth: self.client_auth,
+            cert_verified,
         }))
     }
 
@@ -688,6 +712,7 @@ struct ExpectCertificateVerify<'a> {
     key_schedule: KeyScheduleHandshake,
     server_cert: ServerCertDetails<'a>,
     client_auth: Option<ClientAuthDetails>,
+    cert_verified: verify::ServerCertVerified,
 }
 
 impl State<ClientConnectionData> for ExpectCertificateVerify<'_> {
@@ -705,31 +730,12 @@ impl State<ClientConnectionData> for ExpectCertificateVerify<'_> {
             HandshakePayload::CertificateVerify
         )?;
 
-        trace!("Server cert is {:?}", self.server_cert.cert_chain);
+        // AuthKEM implementation note: Certificate verification (step 1)
+        // is moved into the ExpectCertificate
 
-        // 1. Verify the certificate chain.
-        let (end_entity, intermediates) = self
-            .server_cert
-            .cert_chain
-            .split_first()
-            .ok_or(Error::NoCertificatesPresented)?;
-
-        let now = self.config.current_time()?;
-
-        let cert_verified = self
-            .config
-            .verifier
-            .verify_server_cert(
-                end_entity,
-                intermediates,
-                &self.server_name,
-                &self.server_cert.ocsp_response,
-                now,
-            )
-            .map_err(|err| {
-                cx.common
-                    .send_cert_verify_error_alert(err)
-            })?;
+        // 1. Verify server certificate
+        // By its presence, we assert that this has happened
+        let cert_verified = self.cert_verified;
 
         // 2. Verify their signature on the handshake.
         let handshake_hash = self.transcript.current_hash();
@@ -738,7 +744,7 @@ impl State<ClientConnectionData> for ExpectCertificateVerify<'_> {
             .verifier
             .verify_tls13_signature(
                 &construct_server_verify_message(&handshake_hash),
-                end_entity,
+                &self.server_cert.cert_chain[0],
                 cert_verify,
             )
             .map_err(|err| {
@@ -772,6 +778,7 @@ impl State<ClientConnectionData> for ExpectCertificateVerify<'_> {
             key_schedule: self.key_schedule,
             server_cert: self.server_cert.into_owned(),
             client_auth: self.client_auth,
+            cert_verified: self.cert_verified,
         })
     }
 }
