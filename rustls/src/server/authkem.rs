@@ -3,7 +3,6 @@
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 use log::{trace, warn};
-use pki_types::UnixTime;
 use subtle::ConstantTimeEq;
 
 use crate::conn::ConnectionRandoms;
@@ -319,7 +318,7 @@ impl ExpectAuthKEMFinished {
             key_schedule,
             cx,
             &nonce,
-            UnixTime::now(),
+            config.current_time()?,
             age_add,
         )
         .get_encoding();
