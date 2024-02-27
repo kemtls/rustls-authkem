@@ -136,6 +136,12 @@ pub trait ServerCertVerifier: Debug + Send + Sync {
     ///
     /// This should be in priority order, with the most preferred first.
     fn supported_verify_schemes(&self) -> Vec<SignatureScheme>;
+
+    /// Returns if the given end entity certificate is an AuthKEM certificate.
+    fn is_authkem_certificate(&self) -> Result<bool, Error> {
+        // No regular implementations implement this.
+        return Ok(false);
+    }
 }
 
 /// Something that can verify a client certificate chain

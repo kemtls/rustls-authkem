@@ -2208,6 +2208,7 @@ pub enum HandshakePayload<'a> {
     Finished(Payload<'a>),
     CertificateStatus(CertificateStatus),
     MessageHash(Payload<'a>),
+    KemEncapsulation(Payload<'a>),
     Unknown(Payload<'a>),
 }
 
@@ -2233,6 +2234,7 @@ impl HandshakePayload<'_> {
             Finished(ref x) => x.encode(bytes),
             CertificateStatus(ref x) => x.encode(bytes),
             MessageHash(ref x) => x.encode(bytes),
+            KemEncapsulation(ref x) => x.encode(bytes),
             Unknown(ref x) => x.encode(bytes),
         }
     }
@@ -2261,6 +2263,7 @@ impl HandshakePayload<'_> {
             Finished(x) => Finished(x.into_owned()),
             CertificateStatus(x) => CertificateStatus(x),
             MessageHash(x) => MessageHash(x.into_owned()),
+            KemEncapsulation(x) => KemEncapsulation(x.into_owned()),
             Unknown(x) => Unknown(x.into_owned()),
         }
     }

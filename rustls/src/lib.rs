@@ -569,6 +569,7 @@ pub use client::ClientConnection;
 
 /// Items for use in a server.
 pub mod server {
+    pub(crate) mod authkem;
     pub(crate) mod builder;
     mod common;
     pub(crate) mod handy;

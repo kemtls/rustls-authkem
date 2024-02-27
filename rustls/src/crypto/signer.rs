@@ -73,6 +73,12 @@ pub trait Signer: Debug + Send + Sync {
     /// The returned signature format is also defined by [`Self::scheme()`].
     fn sign(&self, message: &[u8]) -> Result<Vec<u8>, Error>;
 
+    /// For AuthKEM schemes, we don't actually sign, but we decapsulate a ciphertext.
+    fn decapsulate(&self, ciphertext: &[u8]) -> Result<Vec<u8>, Error> {
+        let _ = ciphertext;
+        Err(Error::DecryptError)
+    }
+
     /// Reveals which scheme will be used when you call [`Self::sign()`].
     fn scheme(&self) -> SignatureScheme;
 }

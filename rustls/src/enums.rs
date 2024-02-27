@@ -68,6 +68,7 @@ enum_builder! {
         Finished => 0x14,
         CertificateURL => 0x15,
         CertificateStatus => 0x16,
+        KemEncapsulation => 0x30,
         KeyUpdate => 0x18,
         MessageHash => 0xfe,
     }
@@ -509,6 +510,8 @@ enum_builder! {
         RSA_PSS_SHA512 => 0x0806,
         ED25519 => 0x0807,
         ED448 => 0x0808,
+        // AuthKEM
+        DHKEM_P256_SHA256 => 0xFE01,
     }
 }
 
@@ -527,6 +530,8 @@ impl SignatureScheme {
             | Self::ECDSA_NISTP521_SHA512 => SignatureAlgorithm::ECDSA,
             Self::ED25519 => SignatureAlgorithm::ED25519,
             Self::ED448 => SignatureAlgorithm::ED448,
+            // AuthKEM: Specifying this mapping seems an implementation detail for Rustls
+            Self::DHKEM_P256_SHA256 => SignatureAlgorithm::Unknown(0xFE),
             _ => SignatureAlgorithm::Unknown(0),
         }
     }
@@ -548,7 +553,12 @@ impl SignatureScheme {
                 | Self::RSA_PSS_SHA384
                 | Self::RSA_PSS_SHA256
                 | Self::ED25519
+                | Self::DHKEM_P256_SHA256
         )
+    }
+
+    pub(crate) fn is_authkem_algorithm(&self) -> bool {
+        matches!(*self, Self::DHKEM_P256_SHA256)
     }
 }
 
@@ -576,7 +586,7 @@ mod tests {
     fn test_enums() {
         test_enum8::<SignatureAlgorithm>(SignatureAlgorithm::Anonymous, SignatureAlgorithm::ECDSA);
         test_enum8::<ContentType>(ContentType::ChangeCipherSpec, ContentType::Heartbeat);
-        test_enum8::<HandshakeType>(HandshakeType::HelloRequest, HandshakeType::MessageHash);
+        test_enum8::<HandshakeType>(HandshakeType::HelloRequest, HandshakeType::KemEncapsulation);
         test_enum8::<AlertDescription>(
             AlertDescription::CloseNotify,
             AlertDescription::NoApplicationProtocol,

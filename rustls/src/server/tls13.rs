@@ -18,6 +18,7 @@ use crate::msgs::handshake::{NewSessionTicketExtension, NewSessionTicketPayloadT
 use crate::msgs::message::{Message, MessagePayload};
 use crate::msgs::persist;
 use crate::rand;
+use crate::server::authkem::ExpectAuthKemCiphertext;
 use crate::server::ServerConfig;
 use crate::suites::PartiallyExtractedSecrets;
 use crate::tls13::construct_client_verify_message;
@@ -356,7 +357,7 @@ mod client_hello {
                 &self.config,
             )?;
 
-            let doing_client_auth = if full_handshake {
+            let (authkem_pseudosigner, doing_client_auth) = if full_handshake {
                 let client_auth =
                     emit_certificate_req_tls13(&mut self.transcript, cx, &self.config)?;
                 emit_certificate_tls13(
@@ -365,15 +366,28 @@ mod client_hello {
                     server_key.get_cert(),
                     ocsp_response,
                 );
-                emit_certificate_verify_tls13(
-                    &mut self.transcript,
-                    cx.common,
-                    server_key.get_key(),
-                    &sigschemes_ext,
-                )?;
-                client_auth
+                // Are we going to be tryign to do AuthKEM?
+                let authkem_algorithm = server_key
+                    .get_key()
+                    .choose_scheme(&sigschemes_ext)
+                    .and_then(|signer| {
+                        if signer.scheme().is_authkem_algorithm() {
+                            Some(signer)
+                        } else {
+                            None
+                        }
+                    });
+                if !authkem_algorithm.is_some() {
+                    emit_certificate_verify_tls13(
+                        &mut self.transcript,
+                        cx.common,
+                        server_key.get_key(),
+                        &sigschemes_ext,
+                    )?;
+                }
+                (authkem_algorithm, client_auth)
             } else {
-                false
+                (None, false)
             };
 
             // If we're not doing early data, then the next messages we receive
@@ -398,50 +412,63 @@ mod client_hello {
                 }
             }
 
-            cx.common.check_aligned_handshake()?;
-            let key_schedule_traffic = emit_finished_tls13(
-                &mut self.transcript,
-                &self.randoms,
-                cx,
-                key_schedule,
-                &self.config,
-            );
-
-            if !doing_client_auth && self.config.send_half_rtt_data {
-                // Application data can be sent immediately after Finished, in one
-                // flight.  However, if client auth is enabled, we don't want to send
-                // application data to an unauthenticated peer.
-                cx.common
-                    .start_outgoing_traffic(&mut cx.sendable_plaintext);
-            }
-
-            if doing_client_auth {
-                Ok(Box::new(ExpectCertificate {
+            if let Some(server_signer) = authkem_pseudosigner {
+                Ok(Box::new(ExpectAuthKemCiphertext {
                     config: self.config,
                     transcript: self.transcript,
                     suite: self.suite,
-                    key_schedule: key_schedule_traffic,
+                    key_schedule,
+                    server_signer,
                     send_tickets: self.send_tickets,
-                }))
-            } else if doing_early_data == EarlyDataDecision::Accepted && !cx.common.is_quic() {
-                // Not used for QUIC: RFC 9001 §8.3: Clients MUST NOT send the EndOfEarlyData
-                // message. A server MUST treat receipt of a CRYPTO frame in a 0-RTT packet as a
-                // connection error of type PROTOCOL_VIOLATION.
-                Ok(Box::new(ExpectEarlyData {
-                    config: self.config,
-                    transcript: self.transcript,
-                    suite: self.suite,
-                    key_schedule: key_schedule_traffic,
-                    send_tickets: self.send_tickets,
+                    client_auth: doing_client_auth,
+                    randoms: self.randoms,
                 }))
             } else {
-                Ok(Box::new(ExpectFinished {
-                    config: self.config,
-                    transcript: self.transcript,
-                    suite: self.suite,
-                    key_schedule: key_schedule_traffic,
-                    send_tickets: self.send_tickets,
-                }))
+                cx.common.check_aligned_handshake()?;
+                let key_schedule_traffic = emit_finished_tls13(
+                    &mut self.transcript,
+                    &self.randoms,
+                    cx,
+                    key_schedule,
+                    &self.config,
+                );
+
+                if !doing_client_auth && self.config.send_half_rtt_data {
+                    // Application data can be sent immediately after Finished, in one
+                    // flight.  However, if client auth is enabled, we don't want to send
+                    // application data to an unauthenticated peer.
+                    cx.common
+                        .start_outgoing_traffic(&mut cx.sendable_plaintext);
+                }
+
+                if doing_client_auth {
+                    Ok(Box::new(ExpectCertificate {
+                        config: self.config,
+                        transcript: self.transcript,
+                        suite: self.suite,
+                        key_schedule: key_schedule_traffic,
+                        send_tickets: self.send_tickets,
+                    }))
+                } else if doing_early_data == EarlyDataDecision::Accepted && !cx.common.is_quic() {
+                    // Not used for QUIC: RFC 9001 §8.3: Clients MUST NOT send the EndOfEarlyData
+                    // message. A server MUST treat receipt of a CRYPTO frame in a 0-RTT packet as a
+                    // connection error of type PROTOCOL_VIOLATION.
+                    Ok(Box::new(ExpectEarlyData {
+                        config: self.config,
+                        transcript: self.transcript,
+                        suite: self.suite,
+                        key_schedule: key_schedule_traffic,
+                        send_tickets: self.send_tickets,
+                    }))
+                } else {
+                    Ok(Box::new(ExpectFinished {
+                        config: self.config,
+                        transcript: self.transcript,
+                        suite: self.suite,
+                        key_schedule: key_schedule_traffic,
+                        send_tickets: self.send_tickets,
+                    }))
+                }
             }
         }
     }
@@ -1055,7 +1082,7 @@ impl State<ServerConnectionData> for ExpectEarlyData {
 }
 
 // --- Process client's Finished ---
-fn get_server_session_value(
+pub(crate) fn get_server_session_value(
     transcript: &HandshakeHash,
     suite: &'static Tls13CipherSuite,
     key_schedule: &KeyScheduleTraffic,
@@ -1224,9 +1251,9 @@ impl State<ServerConnectionData> for ExpectFinished {
 }
 
 // --- Process traffic ---
-struct ExpectTraffic {
-    key_schedule: KeyScheduleTraffic,
-    _fin_verified: verify::FinishedMessageVerified,
+pub(crate) struct ExpectTraffic {
+    pub(crate) key_schedule: KeyScheduleTraffic,
+    pub(crate) _fin_verified: verify::FinishedMessageVerified,
 }
 
 impl ExpectTraffic {

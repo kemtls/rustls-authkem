@@ -14,11 +14,13 @@ use alloc::string::ToString;
 
 /// The kinds of secret we can extract from `KeySchedule`.
 #[derive(Debug, Clone, Copy, PartialEq)]
-enum SecretKind {
+pub(crate) enum SecretKind {
     ResumptionPskBinderKey,
     ClientEarlyTrafficSecret,
     ClientHandshakeTrafficSecret,
     ServerHandshakeTrafficSecret,
+    ClientAuthenticatedHandshakeTrafficSecret,
+    ServerAuthenticatedHandshakeTrafficSecret,
     ClientApplicationTrafficSecret,
     ServerApplicationTrafficSecret,
     ExporterMasterSecret,
@@ -34,6 +36,8 @@ impl SecretKind {
             ClientEarlyTrafficSecret => b"c e traffic",
             ClientHandshakeTrafficSecret => b"c hs traffic",
             ServerHandshakeTrafficSecret => b"s hs traffic",
+            ClientAuthenticatedHandshakeTrafficSecret => b"c ahs traffic",
+            ServerAuthenticatedHandshakeTrafficSecret => b"s ahs traffic",
             ClientApplicationTrafficSecret => b"c ap traffic",
             ServerApplicationTrafficSecret => b"s ap traffic",
             ExporterMasterSecret => b"exp master",
@@ -61,9 +65,9 @@ impl SecretKind {
 /// This is the TLS1.3 key schedule.  It stores the current secret and
 /// the type of hash.  This isn't used directly; but only through the
 /// typestates.
-struct KeySchedule {
-    current: Box<dyn HkdfExpander>,
-    suite: &'static Tls13CipherSuite,
+pub(crate) struct KeySchedule {
+    pub(crate) current: Box<dyn HkdfExpander>,
+    pub(crate) suite: &'static Tls13CipherSuite,
 }
 
 // We express the state of a contained KeySchedule using these
@@ -336,6 +340,45 @@ impl KeyScheduleHandshake {
             .sign_finish(&self.client_handshake_traffic_secret, &handshake_hash);
         (KeyScheduleClientBeforeFinished { traffic }, tag)
     }
+
+    pub(crate) fn into_authkem_authed_handshake(
+        mut self,
+        ciphertext: &[u8],
+        key_log: &dyn KeyLog,
+        hs_hash: hash::Output,
+        common: &mut CommonState,
+    ) -> crate::server::authkem::KeyScheduleAuthenticatedHandshake {
+        // ratchet the key to AHS
+        let this = &mut self.ks;
+        let salt = this.derive_for_empty_hash(SecretKind::DerivedSecret);
+        this.current = this
+            .suite
+            .hkdf_provider
+            .extract_from_secret(Some(salt.as_ref()), ciphertext);
+
+        // we cheat a little bit with the client random, as we're not logging atm
+        let client_random = &[0; 32];
+        let client_auth_handshake_traffic_secret = self.ks.derive_logged_secret(
+            SecretKind::ClientAuthenticatedHandshakeTrafficSecret,
+            hs_hash.as_ref(),
+            key_log,
+            client_random,
+        );
+
+        let server_auth_handshake_traffic_secret = self.ks.derive_logged_secret(
+            SecretKind::ServerAuthenticatedHandshakeTrafficSecret,
+            hs_hash.as_ref(),
+            key_log,
+            client_random,
+        );
+
+        self.ks
+            .set_encrypter(&server_auth_handshake_traffic_secret, common);
+        self.ks
+            .set_decrypter(&client_auth_handshake_traffic_secret, common);
+
+        crate::server::authkem::KeyScheduleAuthenticatedHandshake { ks: self.ks }
+    }
 }
 
 pub(crate) struct KeyScheduleClientBeforeFinished {
@@ -418,14 +461,14 @@ impl KeyScheduleTrafficWithClientFinishedPending {
 /// KeySchedule during traffic stage.  All traffic & exporter keys are guaranteed
 /// to be available.
 pub(crate) struct KeyScheduleTraffic {
-    ks: KeySchedule,
-    current_client_traffic_secret: OkmBlock,
-    current_server_traffic_secret: OkmBlock,
+    pub(crate) ks: KeySchedule,
+    pub(crate) current_client_traffic_secret: OkmBlock,
+    pub(crate) current_server_traffic_secret: OkmBlock,
     current_exporter_secret: OkmBlock,
 }
 
 impl KeyScheduleTraffic {
-    fn new(
+    pub(crate) fn new(
         mut ks: KeySchedule,
         hs_hash: hash::Output,
         key_log: &dyn KeyLog,
@@ -447,6 +490,31 @@ impl KeyScheduleTraffic {
             client_random,
         );
 
+        let current_exporter_secret = ks.derive_logged_secret(
+            SecretKind::ExporterMasterSecret,
+            hs_hash.as_ref(),
+            key_log,
+            client_random,
+        );
+
+        Self {
+            ks,
+            current_client_traffic_secret,
+            current_server_traffic_secret,
+            current_exporter_secret,
+        }
+    }
+
+    /// Used for AuthKEM which injects a shared secret when using client auth
+    /// and the client secret and server secrets are computed from different hashes
+    pub(crate) fn new_from_ks_and_keys_authkem(
+        ks: KeySchedule,
+        current_client_traffic_secret: OkmBlock,
+        current_server_traffic_secret: OkmBlock,
+        hs_hash: hash::Output,
+        key_log: &dyn KeyLog,
+        client_random: &[u8; 32],
+    ) -> Self {
         let current_exporter_secret = ks.derive_logged_secret(
             SecretKind::ExporterMasterSecret,
             hs_hash.as_ref(),
@@ -559,7 +627,7 @@ impl KeySchedule {
         }
     }
 
-    fn set_encrypter(&self, secret: &OkmBlock, common: &mut CommonState) {
+    pub(crate) fn set_encrypter(&self, secret: &OkmBlock, common: &mut CommonState) {
         let expander = self
             .suite
             .hkdf_provider
@@ -572,7 +640,7 @@ impl KeySchedule {
             .set_message_encrypter(self.suite.aead_alg.encrypter(key, iv));
     }
 
-    fn set_decrypter(&self, secret: &OkmBlock, common: &mut CommonState) {
+    pub(crate) fn set_decrypter(&self, secret: &OkmBlock, common: &mut CommonState) {
         common
             .record_layer
             .set_message_decrypter(self.derive_decrypter(secret));
@@ -598,7 +666,7 @@ impl KeySchedule {
     }
 
     /// Input the empty secret.
-    fn input_empty(&mut self) {
+    pub(crate) fn input_empty(&mut self) {
         let salt = self.derive_for_empty_hash(SecretKind::DerivedSecret);
         self.current = self
             .suite
@@ -607,8 +675,8 @@ impl KeySchedule {
     }
 
     /// Input the given secret.
-    #[cfg(all(test, any(feature = "ring", feature = "aws_lc_rs")))]
-    fn input_secret(&mut self, secret: &[u8]) {
+    //#[cfg(all(test, any(feature = "ring", feature = "aws_lc_rs")))]
+    pub(crate) fn input_secret(&mut self, secret: &[u8]) {
         let salt = self.derive_for_empty_hash(SecretKind::DerivedSecret);
         self.current = self
             .suite
@@ -635,7 +703,7 @@ impl KeySchedule {
         hkdf_expand_label_block(self.current.as_ref(), kind.to_bytes(), hs_hash)
     }
 
-    fn derive_logged_secret(
+    pub(crate) fn derive_logged_secret(
         &self,
         kind: SecretKind,
         hs_hash: &[u8],
