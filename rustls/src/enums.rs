@@ -511,7 +511,7 @@ enum_builder! {
         ED25519 => 0x0807,
         ED448 => 0x0808,
         // AuthKEM
-        DHKEM_P256_SHA256 => 0xFE01,
+        DHKEM_X25519_SHA256 => 0xFE01,
     }
 }
 
@@ -531,7 +531,7 @@ impl SignatureScheme {
             Self::ED25519 => SignatureAlgorithm::ED25519,
             Self::ED448 => SignatureAlgorithm::ED448,
             // AuthKEM: Specifying this mapping seems an implementation detail for Rustls
-            Self::DHKEM_P256_SHA256 => SignatureAlgorithm::Unknown(0xFE),
+            Self::DHKEM_X25519_SHA256 => SignatureAlgorithm::Unknown(0xFE),
             _ => SignatureAlgorithm::Unknown(0),
         }
     }
@@ -553,12 +553,12 @@ impl SignatureScheme {
                 | Self::RSA_PSS_SHA384
                 | Self::RSA_PSS_SHA256
                 | Self::ED25519
-                | Self::DHKEM_P256_SHA256
+                | Self::DHKEM_X25519_SHA256
         )
     }
 
     pub(crate) fn is_authkem_algorithm(&self) -> bool {
-        matches!(*self, Self::DHKEM_P256_SHA256)
+        matches!(*self, Self::DHKEM_X25519_SHA256)
     }
 }
 

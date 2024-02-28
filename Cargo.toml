@@ -12,10 +12,16 @@ members = [
   "rustls",
   # example of custom provider
   "provider-example",
+  # AuthKEM provider
+  "authkem-crypto-provider",
 ]
 default-members = [
   "examples",
   "rustls",
+  "authkem-crypto-provider",
 ]
 exclude = ["admin/rustfmt"]
 resolver = "2"
+
+[patch.crates-io]
+rustls-pki-types = { path = "../rustls-pki-types" }

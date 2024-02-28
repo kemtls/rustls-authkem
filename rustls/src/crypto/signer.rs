@@ -74,8 +74,9 @@ pub trait Signer: Debug + Send + Sync {
     fn sign(&self, message: &[u8]) -> Result<Vec<u8>, Error>;
 
     /// For AuthKEM schemes, we don't actually sign, but we decapsulate a ciphertext.
-    fn decapsulate(&self, ciphertext: &[u8]) -> Result<Vec<u8>, Error> {
+    fn decapsulate(&self, ciphertext: &[u8], context_info: &[u8]) -> Result<Vec<u8>, Error> {
         let _ = ciphertext;
+        let _ = context_info;
         Err(Error::DecryptError)
     }
 

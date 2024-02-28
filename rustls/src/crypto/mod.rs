@@ -59,6 +59,8 @@ pub mod hpke;
 // avoid having two import paths to the same types.
 pub(crate) mod signer;
 
+pub(crate) mod authkem;
+
 pub use crate::rand::GetRandomFailed;
 
 pub use crate::suites::CipherSuiteCommon;

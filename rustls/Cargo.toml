@@ -16,6 +16,7 @@ build = "build.rs"
 rustversion = { version = "1.0.6", optional = true }
 
 [dependencies]
+spki = "*"
 aws-lc-rs = { version = "1.6", optional = true, default-features = false, features = ["aws-lc-sys"] }
 log = { version = "0.4.4", optional = true }
 # remove once our MSRV is >= 1.70

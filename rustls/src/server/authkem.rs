@@ -65,11 +65,7 @@ impl State<ServerConnectionData> for ExpectAuthKemCiphertext {
         let ciphertext = ctmsg.bytes();
         let ss = self
             .server_signer
-            .decapsulate(ciphertext)?;
-        // let eecrt = self.server_key.get_cert().first().unwrap();
-        // self.handshake.print_runtime("DECAPSULATING FROM CERTIFICATE");
-        // let ss = eecrt.decapsulate(self.server_key.key.get_bytes(), ciphertext).map_err(TLSError::WebPKIError)?;
-        // self.handshake.print_runtime("DECAPSULATED FROM CERTIFICATE");
+            .decapsulate(ciphertext, b"server authentication")?;
 
         self.transcript.add_message(&message);
 

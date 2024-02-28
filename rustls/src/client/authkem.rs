@@ -5,18 +5,11 @@ use super::{
     ClientConnectionData,
 };
 use crate::{
-    client::tls13::ExpectTraffic,
-    common_state::State,
-    conn::ConnectionRandoms,
-    hash_hs::HandshakeHash,
-    msgs::{
+    client::tls13::ExpectTraffic, common_state::State, conn::ConnectionRandoms, crypto::authkem::encapsulate, hash_hs::HandshakeHash, msgs::{
         base::Payload,
         handshake::{HandshakeMessagePayload, HandshakePayload},
         message::{Message, MessagePayload},
-    },
-    tls13::authkem_key_schedule::KeyScheduleClientTraffic,
-    verify, AlertDescription, ClientConfig, Error, HandshakeType, ProtocolVersion, Side,
-    Tls13CipherSuite,
+    }, tls13::authkem_key_schedule::KeyScheduleClientTraffic, verify, AlertDescription, ClientConfig, Error, HandshakeType, ProtocolVersion, Side, Tls13CipherSuite
 };
 
 use alloc::{boxed::Box, sync::Arc};
@@ -36,10 +29,7 @@ impl AuthKEMExpectCertificate {
     ) -> hs::NextStateOrError<'m> {
         let mut state = self.state;
 
-        let (ss, ct) = state
-            .config
-            .verifier
-            .encapsulate(&server_cert.cert_chain[0])?;
+        let (ss, ct) = encapsulate(&server_cert.cert_chain[0], &state.config.provider.signature_verification_algorithms.all, b"server authentication")?;
 
         let ciphertext_message = Message {
             version: ProtocolVersion::TLSv1_3,

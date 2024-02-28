@@ -3,6 +3,7 @@ use crate::common_state::Protocol;
 use crate::common_state::{CommonState, Side, State};
 use crate::conn::ConnectionRandoms;
 use crate::crypto;
+use crate::crypto::authkem::is_authkem_certificate;
 use crate::crypto::ActiveKeyExchange;
 use crate::enums::{
     AlertDescription, ContentType, HandshakeType, ProtocolVersion, SignatureScheme,
@@ -684,10 +685,9 @@ impl State<ClientConnectionData> for ExpectCertificate {
                     .send_cert_verify_error_alert(err)
             })?;
 
-        if self
-            .config
-            .verifier
-            .is_authkem_certificate(end_entity)?
+        let is_authkem = is_authkem_certificate(end_entity, self.config.provider.signature_verification_algorithms.all)?;
+
+        if is_authkem
         {
             self.into_authkem_expect_certificate(cert_verified)
                 .into_expect_ciphertext_or_finished(server_cert, cx)
