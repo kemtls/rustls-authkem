@@ -34,6 +34,7 @@ use crate::tls13::Tls13CipherSuite;
 use crate::verify::{self, DigitallySignedStruct};
 use crate::KeyLog;
 
+use super::authkem::AuthKEMExpectCertificate;
 use super::client_conn::ClientConnectionData;
 use super::hs::ClientContext;
 use crate::client::common::ServerCertDetails;
@@ -616,14 +617,14 @@ impl State<ClientConnectionData> for ExpectCertificateRequest {
     }
 }
 
-struct ExpectCertificate {
-    config: Arc<ClientConfig>,
-    server_name: ServerName<'static>,
-    randoms: ConnectionRandoms,
-    suite: &'static Tls13CipherSuite,
-    transcript: HandshakeHash,
-    key_schedule: KeyScheduleHandshake,
-    client_auth: Option<ClientAuthDetails>,
+pub(crate) struct ExpectCertificate {
+    pub(crate) config: Arc<ClientConfig>,
+    pub(crate) server_name: ServerName<'static>,
+    pub(crate) randoms: ConnectionRandoms,
+    pub(crate) suite: &'static Tls13CipherSuite,
+    pub(crate) transcript: HandshakeHash,
+    pub(crate) key_schedule: KeyScheduleHandshake,
+    pub(crate) client_auth: Option<ClientAuthDetails>,
 }
 
 impl State<ClientConnectionData> for ExpectCertificate {
@@ -683,21 +684,42 @@ impl State<ClientConnectionData> for ExpectCertificate {
                     .send_cert_verify_error_alert(err)
             })?;
 
-        Ok(Box::new(ExpectCertificateVerify {
-            config: self.config,
-            server_name: self.server_name,
-            randoms: self.randoms,
-            suite: self.suite,
-            transcript: self.transcript,
-            key_schedule: self.key_schedule,
-            server_cert,
-            client_auth: self.client_auth,
-            cert_verified,
-        }))
+        if self
+            .config
+            .verifier
+            .is_authkem_certificate(end_entity)?
+        {
+            self.into_authkem_expect_certificate(cert_verified)
+                .into_expect_ciphertext_or_finished(server_cert, cx)
+        } else {
+            Ok(Box::new(ExpectCertificateVerify {
+                config: self.config,
+                server_name: self.server_name,
+                randoms: self.randoms,
+                suite: self.suite,
+                transcript: self.transcript,
+                key_schedule: self.key_schedule,
+                server_cert,
+                client_auth: self.client_auth,
+                cert_verified,
+            }))
+        }
     }
 
     fn into_owned(self: Box<Self>) -> hs::NextState<'static> {
         self
+    }
+}
+
+impl ExpectCertificate {
+    fn into_authkem_expect_certificate(
+        self,
+        cert_verified: verify::ServerCertVerified,
+    ) -> Box<AuthKEMExpectCertificate> {
+        Box::new(AuthKEMExpectCertificate {
+            state: self,
+            cert_verified,
+        })
     }
 }
 
@@ -1002,16 +1024,16 @@ impl State<ClientConnectionData> for ExpectFinished {
 // -- Traffic transit state (TLS1.3) --
 // In this state we can be sent tickets, key updates,
 // and application data.
-struct ExpectTraffic {
-    config: Arc<ClientConfig>,
-    session_storage: Arc<dyn ClientSessionStore>,
-    server_name: ServerName<'static>,
-    suite: &'static Tls13CipherSuite,
-    transcript: HandshakeHash,
-    key_schedule: KeyScheduleTraffic,
-    _cert_verified: verify::ServerCertVerified,
-    _sig_verified: verify::HandshakeSignatureValid,
-    _fin_verified: verify::FinishedMessageVerified,
+pub(super) struct ExpectTraffic {
+    pub(super) config: Arc<ClientConfig>,
+    pub(super) session_storage: Arc<dyn ClientSessionStore>,
+    pub(super) server_name: ServerName<'static>,
+    pub(super) suite: &'static Tls13CipherSuite,
+    pub(super) transcript: HandshakeHash,
+    pub(super) key_schedule: KeyScheduleTraffic,
+    pub(super) _cert_verified: verify::ServerCertVerified,
+    pub(super) _sig_verified: verify::HandshakeSignatureValid,
+    pub(super) _fin_verified: verify::FinishedMessageVerified,
 }
 
 impl ExpectTraffic {

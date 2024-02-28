@@ -138,9 +138,16 @@ pub trait ServerCertVerifier: Debug + Send + Sync {
     fn supported_verify_schemes(&self) -> Vec<SignatureScheme>;
 
     /// Returns if the given end entity certificate is an AuthKEM certificate.
-    fn is_authkem_certificate(&self) -> Result<bool, Error> {
+    fn is_authkem_certificate(&self, cert: &CertificateDer<'_>) -> Result<bool, Error> {
         // No regular implementations implement this.
+        let _ = cert;
         return Ok(false);
+    }
+
+    /// Encapsulates an AuthKEM shared secret to the certificate public key
+    fn encapsulate(&self, cert: &CertificateDer<'_>) -> Result<(&[u8], &[u8]), Error> {
+        let _ = cert;
+        return Err(Error::EncryptError);
     }
 }
 

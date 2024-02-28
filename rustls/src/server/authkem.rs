@@ -108,6 +108,7 @@ impl ExpectAuthKemCiphertext {
                 &*self.config.key_log,
                 self.transcript.current_hash(),
                 cx.common,
+                &self.randoms.client,
             )
             // no client auth shared secret
             .into_key_schedule_main_secret(None);
@@ -170,6 +171,7 @@ impl State<ServerConnectionData> for ExpectAuthKEMFinished {
             self.transcript.current_hash(),
             &*self.config.key_log,
             &self.randoms.client,
+            Side::Server,
             cx.common,
         );
 
@@ -193,13 +195,11 @@ impl State<ServerConnectionData> for ExpectAuthKEMFinished {
 
         // switch keys again
         let key_schedule_traffic = key_schedule.into_traffic(
+            Side::Server,
             self.transcript.current_hash(),
+            cx.common,
             &*self.config.key_log,
             &self.randoms.client,
-        );
-        key_schedule_traffic.ks.set_encrypter(
-            &key_schedule_traffic.current_server_traffic_secret,
-            cx.common,
         );
 
         for _ in 0..self.send_tickets {

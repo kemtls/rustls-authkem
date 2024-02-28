@@ -1,6 +1,6 @@
 use crate::{
     crypto::{hash, hmac, tls13::OkmBlock},
-    CommonState, KeyLog,
+    CommonState, KeyLog, Side,
 };
 
 use super::key_schedule::{self, KeySchedule, KeyScheduleTraffic, SecretKind};
@@ -42,6 +42,7 @@ impl KeyScheduleMainSecret {
         hs_hash: hash::Output,
         key_log: &dyn KeyLog,
         client_random: &[u8; 32],
+        side: Side,
         common: &mut CommonState,
     ) -> KeyScheduleClientTraffic {
         let current_client_traffic_secret = self.ks.derive_logged_secret(
@@ -50,8 +51,15 @@ impl KeyScheduleMainSecret {
             key_log,
             client_random,
         );
-        self.ks
-            .set_decrypter(&current_client_traffic_secret, common);
+
+        match side {
+            Side::Client => self
+                .ks
+                .set_encrypter(&current_client_traffic_secret, common),
+            Side::Server => self
+                .ks
+                .set_decrypter(&current_client_traffic_secret, common),
+        };
 
         KeyScheduleClientTraffic {
             ks: self.ks,
@@ -76,7 +84,9 @@ impl KeyScheduleClientTraffic {
 
     pub(crate) fn into_traffic(
         self,
+        side: Side,
         hs_hash: hash::Output,
+        common: &mut CommonState,
         key_log: &dyn KeyLog,
         client_random: &[u8; 32],
     ) -> KeyScheduleTraffic {
@@ -86,6 +96,15 @@ impl KeyScheduleClientTraffic {
             key_log,
             client_random,
         );
+        match side {
+            Side::Client => self
+                .ks
+                .set_decrypter(&current_server_traffic_secret, common),
+            Side::Server => self
+                .ks
+                .set_encrypter(&current_server_traffic_secret, common),
+        };
+
         KeyScheduleTraffic::new_from_ks_and_keys_authkem(
             self.ks,
             self.current_client_traffic_secret,

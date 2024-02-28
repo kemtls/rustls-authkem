@@ -347,6 +347,7 @@ impl KeyScheduleHandshake {
         key_log: &dyn KeyLog,
         hs_hash: hash::Output,
         common: &mut CommonState,
+        client_random: &[u8; 32],
     ) -> crate::tls13::authkem_key_schedule::KeyScheduleAuthenticatedHandshake {
         // ratchet the key to AHS
         let this = &mut self.ks;
@@ -357,7 +358,6 @@ impl KeyScheduleHandshake {
             .extract_from_secret(Some(salt.as_ref()), ciphertext);
 
         // we cheat a little bit with the client random, as we're not logging atm
-        let client_random = &[0; 32];
         let client_auth_handshake_traffic_secret = self.ks.derive_logged_secret(
             SecretKind::ClientAuthenticatedHandshakeTrafficSecret,
             hs_hash.as_ref(),

@@ -528,6 +528,7 @@ pub use crate::webpki::RootCertStore;
 
 /// Items for use in a client.
 pub mod client {
+    mod authkem;
     pub(super) mod builder;
     mod client_conn;
     mod common;
