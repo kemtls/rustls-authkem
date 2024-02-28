@@ -683,7 +683,6 @@ impl State<ClientConnectionData> for ExpectCertificate {
                     .send_cert_verify_error_alert(err)
             })?;
 
-
         Ok(Box::new(ExpectCertificateVerify {
             config: self.config,
             server_name: self.server_name,

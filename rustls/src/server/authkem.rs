@@ -32,89 +32,9 @@ use super::hs::ServerContext;
 use super::tls13::ExpectTraffic;
 use super::ServerConnectionData;
 
-pub(crate) struct KeyScheduleAuthenticatedHandshake {
-    pub(crate) ks: KeySchedule,
-}
-
-impl KeyScheduleAuthenticatedHandshake {
-    fn into_key_schedule_main_secret(mut self, ss: Option<&[u8]>) -> KeyScheduleMainSecret {
-        if let Some(ss) = ss {
-            self.ks.input_secret(ss);
-        } else {
-            self.ks.input_empty();
-        }
-        KeyScheduleMainSecret { ks: self.ks }
-    }
-}
-
-struct KeyScheduleMainSecret {
-    ks: KeySchedule,
-}
-
-impl KeyScheduleMainSecret {
-    fn sign_client_finish(&self, hs_hash: &hash::Output) -> hmac::Tag {
-        let hmac_key = key_schedule::hkdf_expand_label_block(&*self.ks.current, b"s finished", &[]);
-        self.ks
-            .suite
-            .hkdf_provider
-            .hmac_sign(&hmac_key, hs_hash.as_ref())
-    }
-
-    fn into_client_traffic(
-        self,
-        hs_hash: hash::Output,
-        key_log: &dyn KeyLog,
-        client_random: &[u8; 32],
-    ) -> KeyScheduleClientTraffic {
-        let current_client_traffic_secret = self.ks.derive_logged_secret(
-            SecretKind::ClientApplicationTrafficSecret,
-            hs_hash.as_ref(),
-            key_log,
-            client_random,
-        );
-        KeyScheduleClientTraffic {
-            ks: self.ks,
-            current_client_traffic_secret,
-        }
-    }
-}
-
-struct KeyScheduleClientTraffic {
-    ks: KeySchedule,
-    current_client_traffic_secret: OkmBlock,
-}
-
-impl KeyScheduleClientTraffic {
-    fn sign_server_finish(&self, hs_hash: &hash::Output) -> hmac::Tag {
-        let hmac_key = key_schedule::hkdf_expand_label_block(&*self.ks.current, b"c finished", &[]);
-        self.ks
-            .suite
-            .hkdf_provider
-            .hmac_sign(&hmac_key, hs_hash.as_ref())
-    }
-
-    fn into_traffic(
-        self,
-        hs_hash: hash::Output,
-        key_log: &dyn KeyLog,
-        client_random: &[u8; 32],
-    ) -> KeyScheduleTraffic {
-        let current_server_traffic_secret = self.ks.derive_logged_secret(
-            SecretKind::ServerApplicationTrafficSecret,
-            hs_hash.as_ref(),
-            key_log,
-            client_random,
-        );
-        KeyScheduleTraffic::new_from_ks_and_keys_authkem(
-            self.ks,
-            self.current_client_traffic_secret,
-            current_server_traffic_secret,
-            hs_hash,
-            key_log,
-            client_random,
-        )
-    }
-}
+use crate::tls13::authkem_key_schedule::{
+    KeyScheduleAuthenticatedHandshake, KeyScheduleMainSecret,
+};
 
 pub(crate) struct ExpectAuthKemCiphertext {
     pub config: Arc<ServerConfig>,
@@ -246,12 +166,15 @@ impl State<ServerConnectionData> for ExpectAuthKEMFinished {
         cx.common.check_aligned_handshake()?;
 
         // switch keys
-        let key_schedule = self.key_schedule.into_client_traffic(self.transcript.current_hash(), &*self.config.key_log, &self.randoms.client);
-        key_schedule.ks.set_decrypter(&key_schedule.current_client_traffic_secret, cx.common);
+        let key_schedule = self.key_schedule.into_client_traffic(
+            self.transcript.current_hash(),
+            &*self.config.key_log,
+            &self.randoms.client,
+            cx.common,
+        );
 
         let handshake_hash = self.transcript.current_hash();
-        let verify_data = key_schedule
-            .sign_server_finish(&handshake_hash);
+        let verify_data = key_schedule.sign_server_finish(&handshake_hash);
         let verify_data_payload = Payload::new(verify_data.as_ref());
 
         let m = Message {
@@ -268,11 +191,16 @@ impl State<ServerConnectionData> for ExpectAuthKEMFinished {
 
         cx.common.send_msg(m, true);
 
-
-
         // switch keys again
-        let key_schedule_traffic = key_schedule.into_traffic(self.transcript.current_hash(), &*self.config.key_log, &self.randoms.client);
-        key_schedule_traffic.ks.set_encrypter(&key_schedule_traffic.current_server_traffic_secret, cx.common);
+        let key_schedule_traffic = key_schedule.into_traffic(
+            self.transcript.current_hash(),
+            &*self.config.key_log,
+            &self.randoms.client,
+        );
+        key_schedule_traffic.ks.set_encrypter(
+            &key_schedule_traffic.current_server_traffic_secret,
+            cx.common,
+        );
 
         for _ in 0..self.send_tickets {
             Self::emit_ticket(
@@ -292,7 +220,6 @@ impl State<ServerConnectionData> for ExpectAuthKEMFinished {
             key_schedule: key_schedule_traffic,
             _fin_verified: fin,
         }))
-
     }
 
     fn into_owned(self: Box<Self>) -> super::hs::NextState<'static> {

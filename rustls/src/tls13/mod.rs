@@ -5,6 +5,7 @@ use crate::suites::{CipherSuiteCommon, SupportedCipherSuite};
 use alloc::vec::Vec;
 use core::fmt;
 
+pub(crate) mod authkem_key_schedule;
 pub(crate) mod key_schedule;
 
 /// A TLS 1.3 cipher suite supported by rustls.

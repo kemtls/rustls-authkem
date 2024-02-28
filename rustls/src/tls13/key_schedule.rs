@@ -347,7 +347,7 @@ impl KeyScheduleHandshake {
         key_log: &dyn KeyLog,
         hs_hash: hash::Output,
         common: &mut CommonState,
-    ) -> crate::server::authkem::KeyScheduleAuthenticatedHandshake {
+    ) -> crate::tls13::authkem_key_schedule::KeyScheduleAuthenticatedHandshake {
         // ratchet the key to AHS
         let this = &mut self.ks;
         let salt = this.derive_for_empty_hash(SecretKind::DerivedSecret);
@@ -377,7 +377,7 @@ impl KeyScheduleHandshake {
         self.ks
             .set_decrypter(&client_auth_handshake_traffic_secret, common);
 
-        crate::server::authkem::KeyScheduleAuthenticatedHandshake { ks: self.ks }
+        crate::tls13::authkem_key_schedule::KeyScheduleAuthenticatedHandshake { ks: self.ks }
     }
 }
 
