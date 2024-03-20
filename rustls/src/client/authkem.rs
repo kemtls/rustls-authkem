@@ -13,6 +13,7 @@ use crate::{
 };
 
 use alloc::{boxed::Box, sync::Arc};
+use log::warn;
 use pki_types::ServerName;
 use subtle::ConstantTimeEq;
 
@@ -29,7 +30,7 @@ impl AuthKEMExpectCertificate {
     ) -> hs::NextStateOrError<'m> {
         let mut state = self.state;
 
-        let (ss, ct) = encapsulate(&server_cert.cert_chain[0], &state.config.provider.signature_verification_algorithms.all, b"server authentication")?;
+        let (ct, ss) = encapsulate(&server_cert.cert_chain[0], &state.config.provider.signature_verification_algorithms.all, b"server authentication")?;
 
         let ciphertext_message = Message {
             version: ProtocolVersion::TLSv1_3,
@@ -43,6 +44,8 @@ impl AuthKEMExpectCertificate {
             .add_message(&ciphertext_message);
         cx.common
             .send_msg(ciphertext_message, true);
+
+        warn!("client auth ss = {:?}", ss);
 
         let key_schedule = state
             .key_schedule

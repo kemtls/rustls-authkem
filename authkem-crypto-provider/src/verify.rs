@@ -98,11 +98,14 @@ impl SignatureVerificationAlgorithm for DhkemX25519Sha256 {
     }
 
     fn public_key_alg_id(&self) -> AlgorithmIdentifier {
-        todo!()
+        // https://www.rfc-editor.org/rfc/rfc8410 id-X25519
+        AlgorithmIdentifier::from_slice(&[
+            0x06, 0x03, 0x2b, 0x65, 0x6e
+        ])
     }
 
     fn signature_alg_id(&self) -> AlgorithmIdentifier {
-        todo!()
+        panic!("Not allowed")
     }
 
     fn fips(&self) -> bool {

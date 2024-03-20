@@ -67,6 +67,8 @@ impl State<ServerConnectionData> for ExpectAuthKemCiphertext {
             .server_signer
             .decapsulate(ciphertext, b"server authentication")?;
 
+        warn!("server auth ss = {:?}", ss);
+
         self.transcript.add_message(&message);
 
         if self.client_auth {

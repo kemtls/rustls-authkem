@@ -685,7 +685,10 @@ impl State<ClientConnectionData> for ExpectCertificate {
                     .send_cert_verify_error_alert(err)
             })?;
 
-        let is_authkem = is_authkem_certificate(end_entity, self.config.provider.signature_verification_algorithms.all)?;
+        let is_authkem = is_authkem_certificate(
+            end_entity,
+            self.config.provider.signature_verification_algorithms.all
+        )?;
 
         if is_authkem
         {

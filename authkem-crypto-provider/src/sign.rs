@@ -3,13 +3,13 @@ use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 
+use der::Decode;
 use hpke::aead::ExportOnlyAead;
 use hpke::kdf::HkdfSha256;
 use pkcs8::PrivateKeyInfo;
 use rustls::pki_types::PrivateKeyDer;
 use rustls::sign::{Signer, SigningKey};
 use rustls::{SignatureAlgorithm, SignatureScheme};
-use signature::{RandomizedSigner, SignatureEncoding};
 
 use hpke::{Kem, Serializable};
 use hpke::Deserializable;
@@ -35,13 +35,13 @@ impl TryFrom<PrivateKeyDer<'_>> for DhkemX25519Sha256 {
     fn try_from(value: PrivateKeyDer<'_>) -> Result<Self, Self::Error> {
         match value {
             PrivateKeyDer::Pkcs8(der) => {
-                let key = PrivateKeyInfo::try_from(der.secret_pkcs8_der())?;
-                let algid = spki::ObjectIdentifier::from_bytes(DHKEM_X25519_SHA256.public_key_alg_id().as_ref()).unwrap();
+                let key = PrivateKeyInfo::try_from(der.secret_pkcs8_der()).expect("Parse pki");
+                let algid = spki::ObjectIdentifier::from_der(DHKEM_X25519_SHA256.public_key_alg_id().as_ref()).unwrap();
                 if key.algorithm.oid != algid {
                     return Err(pkcs8::Error::ParametersMalformed);
                 }
                 Ok(Self {
-                    secret_key: Arc::new(<X25519HkdfSha256 as Kem>::PrivateKey::from_bytes(key.private_key).unwrap()),
+                    secret_key: Arc::new(<X25519HkdfSha256 as Kem>::PrivateKey::from_bytes(&key.private_key[2..]).unwrap()),
                     scheme: SignatureScheme::DHKEM_X25519_SHA256,
                 })
             },
@@ -83,36 +83,3 @@ impl Signer for DhkemX25519Sha256 {
     }
 }
 
-
-#[derive(Clone, Debug)]
-pub struct EcdsaSigningKeyP256 {
-    key: Arc<p256::ecdsa::SigningKey>,
-    scheme: SignatureScheme,
-}
-
-impl SigningKey for EcdsaSigningKeyP256 {
-    fn choose_scheme(&self, offered: &[SignatureScheme]) -> Option<Box<dyn Signer>> {
-        if offered.contains(&self.scheme) {
-            Some(Box::new(self.clone()))
-        } else {
-            None
-        }
-    }
-
-    fn algorithm(&self) -> SignatureAlgorithm {
-        SignatureAlgorithm::ECDSA
-    }
-}
-
-impl Signer for EcdsaSigningKeyP256 {
-    fn sign(&self, message: &[u8]) -> Result<Vec<u8>, rustls::Error> {
-        self.key
-            .try_sign_with_rng(&mut rand_core::OsRng, message)
-            .map_err(|_| rustls::Error::General("signing failed".into()))
-            .map(|sig: p256::ecdsa::DerSignature| sig.to_vec())
-    }
-
-    fn scheme(&self) -> SignatureScheme {
-        self.scheme
-    }
-}

@@ -2,25 +2,28 @@ use std::io::{stdout, Read, Write};
 use std::net::TcpStream;
 use std::sync::Arc;
 
+use pki_types::CertificateDer;
+
 fn main() {
     env_logger::init();
 
-    let root_store = rustls::RootCertStore::from_iter(
-        webpki_roots::TLS_SERVER_ROOTS
-            .iter()
-            .cloned(),
+    let ca_bytes = include_bytes!("../../test-ca/x25519/inter.der");
+    let mut root_store = rustls::RootCertStore::from_iter(
+        webpki_roots::TLS_SERVER_ROOTS.iter().cloned()
     );
+    root_store.add(CertificateDer::from(&ca_bytes[..])).expect("Loading certificate failed");
 
     let config =
-        rustls::ClientConfig::builder_with_provider(rustls_provider_example::provider().into())
+        rustls::ClientConfig::builder_with_provider(authkem_crypto_provider::provider().into())
             .with_safe_default_protocol_versions()
             .unwrap()
             .with_root_certificates(root_store)
             .with_no_client_auth();
 
-    let server_name = "www.rust-lang.org".try_into().unwrap();
+    let server_name = "servername".try_into().unwrap();
     let mut conn = rustls::ClientConnection::new(Arc::new(config), server_name).unwrap();
-    let mut sock = TcpStream::connect("www.rust-lang.org:443").unwrap();
+    let mut sock = TcpStream::connect("localhost:4443").unwrap();
+    sock.set_nodelay(true).unwrap();
     let mut tls = rustls::Stream::new(&mut conn, &mut sock);
     tls.write_all(
         concat!(

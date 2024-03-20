@@ -57,35 +57,11 @@ struct TestPki {
 
 impl TestPki {
     fn new() -> Self {
-        let alg = &rcgen::PKCS_ECDSA_P256_SHA256;
-        let mut ca_params = rcgen::CertificateParams::new(Vec::new());
-        ca_params
-            .distinguished_name
-            .push(rcgen::DnType::OrganizationName, "Provider Server Example");
-        ca_params
-            .distinguished_name
-            .push(rcgen::DnType::CommonName, "Example CA");
-        ca_params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
-        ca_params.key_usages = vec![
-            rcgen::KeyUsagePurpose::KeyCertSign,
-            rcgen::KeyUsagePurpose::DigitalSignature,
-        ];
-        ca_params.alg = alg;
-        let ca_cert = rcgen::Certificate::from_params(ca_params).unwrap();
-
-        // Create a server end entity cert issued by the CA.
-        let mut server_ee_params = rcgen::CertificateParams::new(vec!["localhost".to_string()]);
-        server_ee_params.is_ca = rcgen::IsCa::NoCa;
-        server_ee_params.extended_key_usages = vec![rcgen::ExtendedKeyUsagePurpose::ServerAuth];
-        server_ee_params.alg = alg;
-        let server_cert = rcgen::Certificate::from_params(server_ee_params).unwrap();
-        let server_cert_der = CertificateDer::from(
-            server_cert
-                .serialize_der_with_signer(&ca_cert)
-                .unwrap(),
-        );
-        let server_key_der =
-            PrivatePkcs8KeyDer::from(server_cert.serialize_private_key_der()).into();
+        let server_cert_bytes = include_bytes!("../../test-ca/x25519/end.der");
+        let server_key_bytes = include_bytes!("../../test-ca/x25519/end.keyder");
+        let server_cert_der = CertificateDer::from(&server_cert_bytes[..]);
+        let server_key_pkcs8 = PrivatePkcs8KeyDer::from(&server_key_bytes[..]);
+        let server_key_der = PrivateKeyDer::from(server_key_pkcs8);
         Self {
             server_cert_der,
             server_key_der,
@@ -94,7 +70,7 @@ impl TestPki {
 
     fn server_config(self) -> Arc<ServerConfig> {
         let mut server_config =
-            ServerConfig::builder_with_provider(rustls_provider_example::provider().into())
+            ServerConfig::builder_with_provider(authkem_crypto_provider::provider().into())
                 .with_safe_default_protocol_versions()
                 .unwrap()
                 .with_no_client_auth()

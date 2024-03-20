@@ -52,6 +52,8 @@ impl SecretKind {
             ClientEarlyTrafficSecret => "CLIENT_EARLY_TRAFFIC_SECRET",
             ClientHandshakeTrafficSecret => "CLIENT_HANDSHAKE_TRAFFIC_SECRET",
             ServerHandshakeTrafficSecret => "SERVER_HANDSHAKE_TRAFFIC_SECRET",
+            ServerAuthenticatedHandshakeTrafficSecret => "SERVER_AUTH_HANDSHAKE_TRAFFIC_SECRET",
+            ClientAuthenticatedHandshakeTrafficSecret => "CLIENT_AUTH_HANDSHAKE_TRAFFIC_SECRET",
             ClientApplicationTrafficSecret => "CLIENT_TRAFFIC_SECRET_0",
             ServerApplicationTrafficSecret => "SERVER_TRAFFIC_SECRET_0",
             ExporterMasterSecret => "EXPORTER_SECRET",
@@ -371,11 +373,21 @@ impl KeyScheduleHandshake {
             key_log,
             client_random,
         );
+        match common.side {
+            Side::Client => {
+                self.ks
+                    .set_encrypter(&client_auth_handshake_traffic_secret, common);
+                self.ks
+                    .set_decrypter(&server_auth_handshake_traffic_secret, common);
+            },
+            Side::Server => {
+                self.ks
+                    .set_encrypter(&server_auth_handshake_traffic_secret, common);
+                self.ks
+                    .set_decrypter(&client_auth_handshake_traffic_secret, common);
+            },
+        };
 
-        self.ks
-            .set_encrypter(&server_auth_handshake_traffic_secret, common);
-        self.ks
-            .set_decrypter(&client_auth_handshake_traffic_secret, common);
 
         crate::tls13::authkem_key_schedule::KeyScheduleAuthenticatedHandshake { ks: self.ks }
     }

@@ -2382,6 +2382,9 @@ impl<'a> HandshakeMessagePayload<'a> {
                 // not legal on wire
                 return Err(InvalidMessage::UnexpectedMessage("HelloRetryRequest"));
             }
+            HandshakeType::KemEncapsulation => {
+                HandshakePayload::KemEncapsulation(Payload::read(&mut sub))
+            }
             _ => HandshakePayload::Unknown(Payload::read(&mut sub)),
         };
 
