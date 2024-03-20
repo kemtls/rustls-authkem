@@ -24,4 +24,5 @@ exclude = ["admin/rustfmt"]
 resolver = "2"
 
 [patch.crates-io]
-rustls-pki-types = { path = "../rustls-pki-types" }
+# rustls-pki-types = { path = "../rustls-pki-types" }
+rustls-pki-types = { git = "https://github.com/kemtls/rustls-pki-types.git", branch = "authkem" }
