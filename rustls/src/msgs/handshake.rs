@@ -2208,7 +2208,7 @@ pub enum HandshakePayload<'a> {
     Finished(Payload<'a>),
     CertificateStatus(CertificateStatus),
     MessageHash(Payload<'a>),
-    KemEncapsulation(Payload<'a>),
+    KemEncapsulation(KemEncapsulationPayload),
     Unknown(Payload<'a>),
 }
 
@@ -2263,7 +2263,7 @@ impl HandshakePayload<'_> {
             Finished(x) => Finished(x.into_owned()),
             CertificateStatus(x) => CertificateStatus(x),
             MessageHash(x) => MessageHash(x.into_owned()),
-            KemEncapsulation(x) => KemEncapsulation(x.into_owned()),
+            KemEncapsulation(x) => KemEncapsulation(x),
             Unknown(x) => Unknown(x.into_owned()),
         }
     }
@@ -2383,7 +2383,7 @@ impl<'a> HandshakeMessagePayload<'a> {
                 return Err(InvalidMessage::UnexpectedMessage("HelloRetryRequest"));
             }
             HandshakeType::KemEncapsulation => {
-                HandshakePayload::KemEncapsulation(Payload::read(&mut sub))
+                HandshakePayload::KemEncapsulation(KemEncapsulationPayload::read(&mut sub)?)
             }
             _ => HandshakePayload::Unknown(Payload::read(&mut sub)),
         };
@@ -2560,4 +2560,37 @@ fn has_duplicates<I: IntoIterator<Item = E>, E: Into<T>, T: Eq + Ord>(iter: I) -
     }
 
     false
+}
+
+#[derive(Debug)]
+pub struct KemEncapsulationPayload {
+    pub(crate) context: PayloadU8,
+    pub(crate) encapsulation: PayloadU16,
+}
+
+impl Codec<'_> for KemEncapsulationPayload {
+    fn encode(&self, bytes: &mut Vec<u8>) {
+        self.context.encode(bytes);
+        self.encapsulation.encode(bytes);
+    }
+
+    fn read(r: &mut Reader) -> Result<Self, InvalidMessage> {
+        Ok(Self {
+            context: PayloadU8::read(r)?,
+            encapsulation: PayloadU16::read(r)?,
+        })
+    }
+}
+
+impl KemEncapsulationPayload {
+    pub(crate) fn new_no_context(ct: Vec<u8>) -> Self {
+        Self {
+            context: PayloadU8::empty(),
+            encapsulation: PayloadU16::new(ct),
+        }
+    }
+
+    pub(crate) fn ciphertext(&self) -> &[u8] {
+        &self.encapsulation.0
+    }
 }

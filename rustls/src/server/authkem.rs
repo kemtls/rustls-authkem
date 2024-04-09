@@ -62,7 +62,7 @@ impl State<ServerConnectionData> for ExpectAuthKemCiphertext {
             HandshakePayload::KemEncapsulation
         )?;
         // decapsulate
-        let ciphertext = ctmsg.bytes();
+        let ciphertext = ctmsg.ciphertext();
         let ss = self
             .server_signer
             .decapsulate(ciphertext, b"server authentication")?;

@@ -7,7 +7,7 @@ use super::{
 use crate::{
     client::tls13::ExpectTraffic, common_state::State, conn::ConnectionRandoms, crypto::authkem::encapsulate, hash_hs::HandshakeHash, msgs::{
         base::Payload,
-        handshake::{HandshakeMessagePayload, HandshakePayload},
+        handshake::{HandshakeMessagePayload, HandshakePayload, KemEncapsulationPayload},
         message::{Message, MessagePayload},
     }, tls13::authkem_key_schedule::KeyScheduleClientTraffic, verify, AlertDescription, ClientConfig, Error, HandshakeType, ProtocolVersion, Side, Tls13CipherSuite
 };
@@ -36,7 +36,7 @@ impl AuthKEMExpectCertificate {
             version: ProtocolVersion::TLSv1_3,
             payload: MessagePayload::handshake(HandshakeMessagePayload {
                 typ: HandshakeType::KemEncapsulation,
-                payload: HandshakePayload::KemEncapsulation(Payload::new(ct)),
+                payload: HandshakePayload::KemEncapsulation(KemEncapsulationPayload::new_no_context(ct)),
             }),
         };
         state
